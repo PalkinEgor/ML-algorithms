@@ -13,7 +13,7 @@ class MyKNNReg:
         self.y_train = None
 
     def __str__(self):
-        return f"MyKNNReg class: k={self.k}"
+        return f"MyKNNReg class: k={self.k}, metric={self.metric}, weight={self.weight}"
 
     def fit(self, x, y):
         self.x_train = x.copy()
