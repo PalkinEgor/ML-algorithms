@@ -18,45 +18,32 @@ class MyLineReg:
         self.random_state = random_state
 
     def __str__(self):
-        return f"MyLineReg class: n_iter={self.n_iter}, learning_rate={self.learning_rate}"
+        return f"MyLineReg class: n_iter={self.n_iter}, learning_rate={self.learning_rate}, l1_coef={self.l1_coef}, " \
+               f"l2_coef={self.l2_coef}, random_state={self.random_state}"
 
-    def fit(self, X, y, verbose=False):
+    def fit(self, x, y, verbose=False):
         random.seed(self.random_state)
         if self.sgd_sample is not None:
             if 0 < self.sgd_sample <= 1:
-                self.sgd_sample = int(round(X.shape[0] * self.sgd_sample, 0))
-        new_X = X.copy()
-        new_X.insert(0, "x0", 1)
-        self.weights = np.ones(new_X.shape[1])
+                self.sgd_sample = int(round(x.shape[0] * self.sgd_sample, 0))
+        new_x = x.copy()
+        new_x.insert(0, "x0", 1)
+        self.weights = np.ones(new_x.shape[1])
         predictions_sample = None
         sample_rows_idx = None
 
         for i in range(1, self.n_iter + 1):
-            if self.sgd_sample is not None:
-                sample_rows_idx = random.sample(range(new_X.shape[0]), self.sgd_sample)
-            predictions = np.matmul(new_X, self.weights)  # make predictions
-            if self.sgd_sample is not None:
-                predictions_sample = np.matmul(new_X.iloc[sample_rows_idx], self.weights)
+            if self.sgd_sample is not None:  # make predictions
+                sample_rows_idx = random.sample(range(new_x.shape[0]), self.sgd_sample)
+                predictions_sample = np.matmul(new_x.iloc[sample_rows_idx], self.weights)
+            predictions = np.matmul(new_x, self.weights)
 
-            loss = sum((predictions - y) ** 2) / new_X.shape[0]  # calculating loss function
-            if self.reg == "l1":  # calculating loss with regularization
-                loss += self.l1_coef * sum(abs(self.weights))
-            if self.reg == "l2":
-                loss += self.l2_coef * sum(self.weights ** 2)
-            if self.reg == "elasticnet":
-                loss += self.l1_coef * sum(abs(self.weights)) + self.l2_coef * sum(self.weights ** 2)
+            loss = self._loss(y, predictions)  # calculating loss function
 
             if self.sgd_sample is not None:  # calculating gradient
-                gradient = np.matmul((predictions_sample - y.iloc[sample_rows_idx]),
-                                     new_X.iloc[sample_rows_idx]) * 2 / len(sample_rows_idx)
+                gradient = self._gradient(y.iloc[sample_rows_idx], predictions_sample, new_x.iloc[sample_rows_idx])
             else:
-                gradient = np.matmul((predictions - y), new_X) * 2 / new_X.shape[0]
-            if self.reg == "l1":  # calculating gradient with regularization
-                gradient += self.l1_coef * np.sign(self.weights)
-            if self.reg == "l2":
-                gradient += self.l2_coef * 2 * self.weights
-            if self.reg == "elasticnet":
-                gradient += self.l1_coef * np.sign(self.weights) + self.l2_coef * 2 * self.weights
+                gradient = self._gradient(y, predictions, new_x)
 
             if callable(self.learning_rate):  # update weights
                 self.weights = self.weights - self.learning_rate(i) * gradient
@@ -64,7 +51,7 @@ class MyLineReg:
                 self.weights = self.weights - self.learning_rate * gradient
 
             if self.metric is not None:  # calculate metrics
-                self.score = getattr(self, self.metric)(y, np.matmul(new_X, self.weights))
+                self.score = getattr(self, self.metric)(y, np.matmul(new_x, self.weights))
 
             if verbose:  # print logs
                 if i % verbose == 0:
@@ -73,10 +60,36 @@ class MyLineReg:
                     else:
                         print(f"iteration: {i}, loss: {loss}, {self.metric}: {self.score}")
 
-    def predict(self, X):
-        new_X = X.copy()
-        new_X.insert(0, "x0", 1)
-        return np.array(np.matmul(new_X, self.weights))
+    def predict(self, x):
+        new_x = x.copy()
+        new_x.insert(0, "x0", 1)
+        return np.array(np.matmul(new_x, self.weights))
+
+    def get_coef(self):
+        return np.array(self.weights[1:])
+
+    def get_best_score(self):
+        return self.score
+
+    def _loss(self, y_true, y_pred):
+        loss = sum((y_pred - y_true) ** 2) / y_true.size
+        if self.reg == "l1":
+            loss += self.l1_coef * sum(abs(self.weights))
+        if self.reg == "l2":
+            loss += self.l2_coef * sum(self.weights ** 2)
+        if self.reg == "elasticnet":
+            loss += self.l1_coef * sum(abs(self.weights)) + self.l2_coef * sum(self.weights ** 2)
+        return loss
+
+    def _gradient(self, y_true, y_pred, x):
+        gradient = np.matmul((y_pred - y_true), x) * 2 / x.shape[0]
+        if self.reg == "l1":
+            gradient += self.l1_coef * np.sign(self.weights)
+        if self.reg == "l2":
+            gradient += self.l2_coef * 2 * self.weights
+        if self.reg == "elasticnet":
+            gradient += self.l1_coef * np.sign(self.weights) + self.l2_coef * 2 * self.weights
+        return gradient
 
     @staticmethod
     def mae(y_true, y_pred):
@@ -98,9 +111,3 @@ class MyLineReg:
     def r2(y_true, y_pred):
         mean = np.mean(y_true)
         return 1 - (sum((y_true - y_pred) ** 2) / sum((y_true - mean) ** 2))
-
-    def get_coef(self):
-        return np.array(self.weights[1:])
-
-    def get_best_score(self):
-        return self.score
